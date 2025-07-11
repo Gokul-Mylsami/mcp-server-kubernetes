@@ -5,6 +5,13 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch: 
+    inputs:
+      force-run:
+        description: 'Force run the workflow'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   test:
