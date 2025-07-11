@@ -32,22 +32,7 @@ jobs:
           sudo install minikube-linux-amd64 /usr/local/bin/minikube
           minikube start --driver=docker
           minikube status
-
-      - name: Start kubectl proxy
-        run: |
-          # Start the proxy in background and save the PID
-          # This gets around having to set the ca cert stuff in bun/node at ~/.minikube/ca.crt which didnt work because no SAN name in cert.
-          kubectl proxy --port=8080 &
-          echo "KUBECTL_PROXY_PID=$!" >> $GITHUB_ENV
-
-          # Give the proxy a moment to start
-          sleep 3
-
-          # Update the kubeconfig file to use the proxy URL
-          sed -i 's|https://192.168.49.2:8443|http://localhost:8080|g' ~/.kube/config
-
-          # Verify the change took effect
-          grep "server:" ~/.kube/config
+          echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
 
       - name: Run tests and generate JUnit report
         run: |
