@@ -33,9 +33,30 @@ jobs:
           minikube start --driver=docker
           minikube status
           echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
-
-      - name: Run tests and generate JUnit report
+          
+      - name: Configure kubectl to work with both proxy and direct access
         run: |
+          # Create a backup of the original kubeconfig for direct access
+          cp ~/.kube/config ~/.kube/config.direct
+          
+          # Start the proxy in background for most operations
+          kubectl proxy --port=8080 &
+          echo "KUBECTL_PROXY_PID=$!" >> $GITHUB_ENV
+          
+          # Give the proxy a moment to start
+          sleep 3
+          
+          # For most operations, use the proxy by updating the server URL
+          sed -i 's|https://192.168.49.2:8443|http://localhost:8080|g' ~/.kube/config
+          
+          # Verify the proxy works
+          kubectl get nodes
+
+      - name: Run tests with kubectl cp fix
+        run: |
+          # Set environment variable to tell our MCP server about the direct kubeconfig
+          export KUBECONFIG_DIRECT="$HOME/.kube/config.direct"
+          
           # Run tests with both default and JUnit reporters
           bun run test --reporter default --reporter junit --outputFile junit-results.xml
 
@@ -43,10 +64,10 @@ jobs:
         uses: dorny/test-reporter@v2
         if: always()
         with:
-          name: Bun Tests # Name of the check run which will be created
-          path: junit-results.xml # Path to test results
-          reporter: jest-junit # Format of test results (jest-junit is compatible with Bun's JUnit output)
-          fail-on-error: true # Fail the workflow if there are test failures
+          name: Bun Tests
+          path: junit-results.xml
+          reporter: jest-junit
+          fail-on-error: true
 
       - name: Verify build works
         run: bun run build
@@ -54,11 +75,7 @@ jobs:
       - name: Clean up kubectl proxy
         if: always()
         run: |
-          # Always attempt to kill the proxy process even if previous steps fail
           if [ -n "$KUBECTL_PROXY_PID" ]; then
             echo "Stopping kubectl proxy (PID: $KUBECTL_PROXY_PID)"
             kill $KUBECTL_PROXY_PID || true
           fi
-
-          # Restore the original kubeconfig (optional)
-          sed -i 's|http://localhost:8080|https://192.168.49.2:8443|g' ~/.kube/config
