@@ -60,11 +60,13 @@ jobs:
           kubectl get nodes
 
       - name: Run tests with mixed kubeconfig approach
+        env:
+          # Set partial K8s config to trigger fallback scenarios
+          K8S_SERVER: "http://localhost:8080"
+          # K8S_TOKEN intentionally not set to test fallback
+          KUBECONFIG_DIRECT: "$HOME/.kube/config.backup"
+          KUBECONFIG_PROXY: "$HOME/.kube/config"
         run: |
-          # Set environment variable to help tests know about the kubeconfig contexts
-          export KUBECONFIG_DIRECT="$HOME/.kube/config.backup"
-          export KUBECONFIG_PROXY="$HOME/.kube/config"
-          
           # Run tests with both default and JUnit reporters
           bun run test --reporter default --reporter junit --outputFile junit-results.xml
 
