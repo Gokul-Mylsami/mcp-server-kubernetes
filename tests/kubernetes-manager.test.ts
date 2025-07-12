@@ -484,16 +484,17 @@ current-context: test-context`;
 
       test("should fall back to default file when K8S_SERVER is missing but K8S_TOKEN is set", () => {
         process.env.K8S_TOKEN = "test-token";
-        // K8S_SERVER is intentionally not set
+        delete process.env.K8S_SERVER;
+
+        // 🔧 Set up spy BEFORE instantiating the manager
+        const spy = vi.spyOn(k8s.KubeConfig.prototype, "loadFromDefault");
 
         // Should not throw since it falls back to default file
         expect(() => {
           kubernetesManager = new KubernetesManager();
         }).not.toThrow();
 
-        // Verify it called loadFromDefault
-        const kubeConfig = kubernetesManager.getKubeConfig();
-        expect(kubeConfig.loadFromDefault).toHaveBeenCalled();
+        expect(spy).toHaveBeenCalled();
       });
 
       test("should fall back to default file when K8S_TOKEN is missing but K8S_SERVER is set", () => {

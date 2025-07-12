@@ -5,6 +5,13 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch: 
+    inputs:
+      force-run:
+        description: 'Force run the workflow'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   test:
@@ -25,24 +32,40 @@ jobs:
           sudo install minikube-linux-amd64 /usr/local/bin/minikube
           minikube start --driver=docker
           minikube status
-
-      - name: Start kubectl proxy
+          echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
+          
+      - name: Configure kubectl for both proxy and direct access
         run: |
-          # Start the proxy in background and save the PID
-          # This gets around having to set the ca cert stuff in bun/node at ~/.minikube/ca.crt which didnt work because no SAN name in cert.
+          # Create a backup of the original kubeconfig
+          cp ~/.kube/config ~/.kube/config.backup
+          
+          # Start the proxy in background for most operations
           kubectl proxy --port=8080 &
           echo "KUBECTL_PROXY_PID=$!" >> $GITHUB_ENV
-
+          
           # Give the proxy a moment to start
           sleep 3
+          
+          # Create a kubeconfig context that uses the proxy for most operations
+          kubectl config set-cluster minikube-proxy --server=http://localhost:8080 --insecure-skip-tls-verify=true
+          kubectl config set-context minikube-proxy --cluster=minikube-proxy --user=minikube
+          
+          # For kubectl cp operations, we'll need to temporarily switch back to direct connection
+          # The original minikube context will be used for cp operations
+          
+          # Set the proxy context as default for most operations
+          kubectl config use-context minikube-proxy
+          
+          # Verify the proxy works
+          kubectl get nodes
 
-          # Update the kubeconfig file to use the proxy URL
-          sed -i 's|https://192.168.49.2:8443|http://localhost:8080|g' ~/.kube/config
-
-          # Verify the change took effect
-          grep "server:" ~/.kube/config
-
-      - name: Run tests and generate JUnit report
+      - name: Run tests with mixed kubeconfig approach
+        env:
+          # Set partial K8s config to trigger fallback scenarios
+          K8S_SERVER: "http://localhost:8080"
+          # K8S_TOKEN intentionally not set to test fallback
+          KUBECONFIG_DIRECT: "$HOME/.kube/config.backup"
+          KUBECONFIG_PROXY: "$HOME/.kube/config"
         run: |
           # Run tests with both default and JUnit reporters
           bun run test --reporter default --reporter junit --outputFile junit-results.xml
@@ -51,10 +74,10 @@ jobs:
         uses: dorny/test-reporter@v2
         if: always()
         with:
-          name: Bun Tests # Name of the check run which will be created
-          path: junit-results.xml # Path to test results
-          reporter: jest-junit # Format of test results (jest-junit is compatible with Bun's JUnit output)
-          fail-on-error: true # Fail the workflow if there are test failures
+          name: Bun Tests
+          path: junit-results.xml
+          reporter: jest-junit
+          fail-on-error: true
 
       - name: Verify build works
         run: bun run build
@@ -62,11 +85,7 @@ jobs:
       - name: Clean up kubectl proxy
         if: always()
         run: |
-          # Always attempt to kill the proxy process even if previous steps fail
           if [ -n "$KUBECTL_PROXY_PID" ]; then
             echo "Stopping kubectl proxy (PID: $KUBECTL_PROXY_PID)"
             kill $KUBECTL_PROXY_PID || true
           fi
-
-          # Restore the original kubeconfig (optional)
-          sed -i 's|http://localhost:8080|https://192.168.49.2:8443|g' ~/.kube/config
