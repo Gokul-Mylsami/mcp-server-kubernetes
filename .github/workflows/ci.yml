@@ -34,10 +34,10 @@ jobs:
           minikube status
           echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
           
-      - name: Configure kubectl to work with both proxy and direct access
+      - name: Configure kubectl for both proxy and direct access
         run: |
-          # Create a backup of the original kubeconfig for direct access
-          cp ~/.kube/config ~/.kube/config.direct
+          # Create a backup of the original kubeconfig
+          cp ~/.kube/config ~/.kube/config.backup
           
           # Start the proxy in background for most operations
           kubectl proxy --port=8080 &
@@ -46,16 +46,24 @@ jobs:
           # Give the proxy a moment to start
           sleep 3
           
-          # For most operations, use the proxy by updating the server URL
-          sed -i 's|https://192.168.49.2:8443|http://localhost:8080|g' ~/.kube/config
+          # Create a kubeconfig context that uses the proxy for most operations
+          kubectl config set-cluster minikube-proxy --server=http://localhost:8080 --insecure-skip-tls-verify=true
+          kubectl config set-context minikube-proxy --cluster=minikube-proxy --user=minikube
+          
+          # For kubectl cp operations, we'll need to temporarily switch back to direct connection
+          # The original minikube context will be used for cp operations
+          
+          # Set the proxy context as default for most operations
+          kubectl config use-context minikube-proxy
           
           # Verify the proxy works
           kubectl get nodes
 
-      - name: Run tests with kubectl cp fix
+      - name: Run tests with mixed kubeconfig approach
         run: |
-          # Set environment variable to tell our MCP server about the direct kubeconfig
-          export KUBECONFIG_DIRECT="$HOME/.kube/config.direct"
+          # Set environment variable to help tests know about the kubeconfig contexts
+          export KUBECONFIG_DIRECT="$HOME/.kube/config.backup"
+          export KUBECONFIG_PROXY="$HOME/.kube/config"
           
           # Run tests with both default and JUnit reporters
           bun run test --reporter default --reporter junit --outputFile junit-results.xml
