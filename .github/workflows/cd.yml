@@ -46,6 +46,12 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
 
+      - name: Start kubectl proxy
+        run: |
+          # Start the proxy in background and save the PID
+          kubectl proxy --port=8080 &  
+          echo "KUBECTL_PROXY_PID=$!" >> $GITHUB_ENV
+
       - name: Run Tests in Minikube
         run: bun run test
 
