@@ -54,8 +54,9 @@ jobs:
           # Give the proxy a moment to start
           sleep 3
 
-          # Update the kubeconfig file to use the proxy URL
-          sed -i 's|https://192.168.49.2:8443|http://localhost:8080|g' ~/.kube/config
+          # Get the current server URL and replace it with proxy URL
+          MINIKUBE_IP=$(minikube ip)
+          sed -i "s|https://$MINIKUBE_IP:8443|http://localhost:8080|g" ~/.kube/config
 
           # Verify the change took effect
           grep "server:" ~/.kube/config
@@ -87,4 +88,5 @@ jobs:
           fi
 
           # Restore the original kubeconfig (optional)
-          sed -i 's|http://localhost:8080|https://192.168.49.2:8443|g' ~/.kube/config
+          MINIKUBE_IP=$(minikube ip)
+          sed -i "s|http://localhost:8080|https://$MINIKUBE_IP:8443|g" ~/.kube/config
