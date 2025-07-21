@@ -27,13 +27,17 @@ describe("test kubectl cp command", () => {
   let testNamespace: string;
   const podName = `cp-test-pod-${generateRandomId()}`;
   const NAMESPACE_PREFIX = "test-cp";
-  const localOutputDir = path.join(os.tmpdir(), `cp-test-${generateRandomId()}`);
+  const localOutputDir = path.join(
+    os.tmpdir(),
+    `cp-test-${generateRandomId()}`
+  );
 
   beforeEach(async () => {
     transport = new StdioClientTransport({
       command: "bun",
       args: ["src/index.ts"],
       stderr: "pipe",
+      env: process.env as Record<string, string>, // Ensure the MCP server inherits the current environment
     });
 
     client = new Client(
@@ -73,9 +77,14 @@ spec:
   - name: test-container
     image: busybox
     command: ["sh", "-c", "echo 'HelloWorld' > /tmp/testfile.txt && sleep 3600"]
+    securityContext:
+      runAsUser: 0
   restartPolicy: Never`;
 
-    const manifestPath = path.join(os.tmpdir(), `pod-${generateRandomId()}.yaml`);
+    const manifestPath = path.join(
+      os.tmpdir(),
+      `pod-${generateRandomId()}.yaml`
+    );
     await fs.writeFile(manifestPath, podManifest);
 
     // Apply pod manifest
@@ -175,7 +184,10 @@ spec:
       z.any()
     );
 
-    console.log("kubectl_cp response:", (copyResponse as KubectlResponse).content[0].text);
+    console.log(
+      "kubectl_cp response:",
+      (copyResponse as KubectlResponse).content[0].text
+    );
     await sleep(2000);
 
     const fileContents = await fs.readFile(localFilePath, "utf8");
@@ -204,7 +216,10 @@ spec:
       z.any()
     );
 
-    console.log("kubectl_cp upload response:", (copyResponse as KubectlResponse).content[0].text);
+    console.log(
+      "kubectl_cp upload response:",
+      (copyResponse as KubectlResponse).content[0].text
+    );
     await sleep(2000);
 
     const catResponse = await client.request(
@@ -227,6 +242,8 @@ spec:
       z.any()
     );
 
-    expect((catResponse as KubectlResponse).content[0].text.trim()).toBe(testContent);
+    expect((catResponse as KubectlResponse).content[0].text.trim()).toBe(
+      testContent
+    );
   }, 120000);
 });
