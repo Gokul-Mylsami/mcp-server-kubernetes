@@ -66,6 +66,56 @@ describe("test kubectl cp command", () => {
       z.any()
     );
 
+    // Create RBAC role and binding
+    const rbacManifest = `apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-file-access
+  namespace: ${testNamespace}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/exec"]
+  verbs: ["get", "list", "create", "delete", "watch"]
+- apiGroups: [""]
+  resources: ["pods/ephemeral"]
+  verbs: ["create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-file-access-binding
+  namespace: ${testNamespace}
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: ${testNamespace}
+roleRef:
+  kind: Role
+  name: pod-file-access
+  apiGroup: rbac.authorization.k8s.io`;
+
+    const rbacPath = path.join(
+      os.tmpdir(),
+      `rbac-${generateRandomId()}.yaml`
+    );
+    await fs.writeFile(rbacPath, rbacManifest);
+
+    // Apply RBAC manifest
+    await client.request(
+      {
+        method: "tools/call",
+        params: {
+          name: "kubectl_generic",
+          arguments: {
+            command: "apply",
+            args: ["-f", rbacPath],
+          },
+        },
+      },
+      z.any()
+    );
+    await fs.unlink(rbacPath);
+
     // Create pod manifest as YAML
     const podManifest = `apiVersion: v1
 kind: Pod
@@ -79,6 +129,20 @@ spec:
     command: ["sh", "-c", "echo 'HelloWorld' > /tmp/testfile.txt && sleep 3600"]
     securityContext:
       runAsUser: 0
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+    volumeMounts:
+    - name: tmp-volume
+      mountPath: /tmp
+  volumes:
+  - name: tmp-volume
+    emptyDir: {}
+  securityContext:
+    fsGroup: 0
+    runAsNonRoot: false
+    seccompProfile:
+      type: RuntimeDefault
   restartPolicy: Never`;
 
     const manifestPath = path.join(
