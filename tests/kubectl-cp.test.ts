@@ -68,31 +68,38 @@ describe("test kubectl cp command", () => {
 
     // Create RBAC role and binding
     const rbacManifest = `apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
-  name: pod-file-access
-  namespace: ${testNamespace}
+  name: pod-file-access-${testNamespace}
 rules:
 - apiGroups: [""]
-  resources: ["pods", "pods/exec"]
+  resources: ["pods", "pods/exec", "pods/portforward"]
   verbs: ["get", "list", "create", "delete", "watch"]
 - apiGroups: [""]
   resources: ["pods/ephemeral"]
   verbs: ["create", "delete"]
+- apiGroups: [""]
+  resources: ["pods/attach"]
+  verbs: ["create", "get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
-  name: pod-file-access-binding
-  namespace: ${testNamespace}
+  name: pod-file-access-binding-${testNamespace}
 subjects:
 - kind: ServiceAccount
   name: default
   namespace: ${testNamespace}
 roleRef:
-  kind: Role
-  name: pod-file-access
-  apiGroup: rbac.authorization.k8s.io`;
+  kind: ClusterRole
+  name: pod-file-access-${testNamespace}
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: ${testNamespace}`;
 
     const rbacPath = path.join(
       os.tmpdir(),
@@ -123,6 +130,7 @@ metadata:
   name: ${podName}
   namespace: ${testNamespace}
 spec:
+  serviceAccountName: default
   containers:
   - name: test-container
     image: busybox
@@ -132,6 +140,7 @@ spec:
       allowPrivilegeEscalation: false
       capabilities:
         drop: ["ALL"]
+      readOnlyRootFilesystem: false
     volumeMounts:
     - name: tmp-volume
       mountPath: /tmp
@@ -209,6 +218,40 @@ spec:
   });
 
   afterEach(async () => {
+    // Delete the ClusterRole and ClusterRoleBinding first
+    await client.request(
+      {
+        method: "tools/call",
+        params: {
+          name: "kubectl_generic",
+          arguments: {
+            command: "delete",
+            resourceType: "clusterrole",
+            name: `pod-file-access-${testNamespace}`,
+            flags: { force: true, "grace-period": "0" },
+          },
+        },
+      },
+      z.any()
+    );
+
+    await client.request(
+      {
+        method: "tools/call",
+        params: {
+          name: "kubectl_generic",
+          arguments: {
+            command: "delete",
+            resourceType: "clusterrolebinding",
+            name: `pod-file-access-binding-${testNamespace}`,
+            flags: { force: true, "grace-period": "0" },
+          },
+        },
+      },
+      z.any()
+    );
+
+    // Then delete the namespace
     await client.request(
       {
         method: "tools/call",
@@ -224,6 +267,7 @@ spec:
       },
       z.any()
     );
+
     await transport.close();
     await sleep(3000);
     await fs.rm(localOutputDir, { recursive: true, force: true });
